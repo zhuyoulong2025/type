@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>打字特训 (字母间隙版)</title>
+    <style>
+        /* 全局重置 */
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* --- 左侧侧边栏 --- */
+        .sidebar {
+            width: 200px;
+            background-color: #fff;
+            border-right: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            z-index: 10;
+        }
+        .sidebar h2 { font-size: 1.2rem; color: #333; margin-bottom: 20px; text-align: center; }
+        .mode-btn {
+            background: #f0f2f5; border: none; padding: 15px; margin-bottom: 10px;
+            border-radius: 8px; cursor: pointer; text-align: left;
+            font-size: 1rem; font-weight: bold; color: #555; transition: all 0.2s;
+        }
+        .mode-btn.active { background: #0984e3; color: white; }
+
+        /* --- 右侧主区域 --- */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: #f0f2f5;
+        }
+
+        /* --- 核心：打字显示区域 --- */
+        .typing-area {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 4.5rem; 
+            font-weight: bold;
+            line-height: 1.2;
+            
+            background: #2d3436;
+            color: #dfe6e9;
+            padding: 40px;
+            border-radius: 20px;
+            width: 95%;
+            max-width: 95vw;
+            
+            overflow-x: auto;
+            white-space: nowrap; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        /* --- 隐藏滚动条 --- */
+        .typing-area::-webkit-scrollbar { height: 0; width: 0; display: none; }
+        .typing-area { scrollbar-width: none; -ms-overflow-style: none; }
+        /* ------------------ */
+
+        .line {
+            height: 100px; 
+            display: block;
+            white-space: pre; 
+        }
+
+        /* --- 核心修改：字母间隙 --- */
+        .line span {
+            display: inline-block;
+            text-align: center;
+            /* 在每个字母右侧添加 0.5em (相当于半个字母宽度) 的间距 */
+            margin-right: 0.5em;
+        }
+        /* ----------------------- */
+
+        #target-line { color: #b2bec3; margin-bottom: 10px; border-bottom: 4px dashed #636e72; }
+        .char-correct { color: #00b894; } 
+        .char-wrong { color: #ff7675; background: rgba(255, 118, 117, 0.2); border-radius: 4px; }
+
+        /* 按钮与统计 */
+        #start-btn {
+            background-color: #00b894; color: white; border: none; padding: 20px 60px;
+            font-size: 1.5rem; border-radius: 10px; cursor: pointer; margin-top: 30px;
+            box-shadow: 0 5px 15px rgba(0, 184, 148, 0.4);
+        }
+        #start-btn:disabled { background-color: #b2bec3; cursor: not-allowed; box-shadow: none; }
+
+        #stats-area {
+            margin-top: 20px; font-size: 1.5rem; color: #2d3436; display: none;
+            background: white; padding: 15px 30px; border-radius: 10px;
+        }
+        
+        #hidden-input { position: absolute; opacity: 0; top: -1000px; }
+        
+        /* 光标 */
+        .cursor {
+            display: inline-block; width: 8px; 
+            height: 4rem; 
+            background-color: #dfe6e9; animation: blink 1s infinite;
+            vertical-align: text-bottom;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        /* 手机适配 */
+        @media (max-width: 768px) {
+            body { flex-direction: column; }
+            .sidebar { width: 100%; flex-direction: row; padding: 10px; height: auto; justify-content: center; }
+            .mode-btn { padding: 10px; font-size: 0.9rem; margin: 0 5px; }
+            .typing-area { font-size: 3rem; padding: 20px; width: 95%; }
+            .line { height: 60px; }
+            .cursor { height: 2.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <aside class="sidebar">
+        <h2>🎯 模式选择</h2>
+        <button class="mode-btn active" onclick="setMode('letter', this)">🅰️ 字母练习</button>
+        <button class="mode-btn" onclick="setMode('word', this)">📝 单词练习</button>
+    </aside>
+
+    <main class="main-content">
+        <div class="typing-area" id="display-area" onclick="focusInput()">
+            <div id="target-line" class="line">请选择模式</div>
+            <div id="input-line" class="line"><span class="cursor"></span></div>
+        </div>
+
+        <div id="stats-area">
+            <span>✅ 正确：<b id="score-correct" style="color:#00b894">0</b></span>
+            <span style="margin: 0 20px;">|</span>
+            <span>❌ 错误：<b id="score-wrong" style="color:#ff7675">0</b></span>
+        </div>
+
+        <button id="start-btn" onclick="startGame()">开始练习</button>
+        <input type="text" id="hidden-input" autocomplete="off">
+    </main>
+
+    <script>
+        // --- 配置 ---
+        const LETTER_COUNT = 10;
+        const WORD_COUNT = 5;    
+        const WORD_LIST = [
+            "hello", "world", "code", "java", "python", "work", "good", "time", 
+            "help", "love", "team", "data", "user", "click", "type", "fast",
+            "apple", "blue", "green", "red", "open", "save", "file", "edit"
+        ];
+        const ALPHABET = "abcdefghijklmnopqrstuvwxyz";
+
+        let currentMode = 'letter';
+        let targetText = "";
+        let currentIndex = 0;
+        let correctCount = 0;
+        let wrongCount = 0;
+        let isPlaying = false;
+
+        const targetLineEl = document.getElementById('target-line');
+        const inputLineEl = document.getElementById('input-line');
+        const hiddenInput = document.getElementById('hidden-input');
+        const statsArea = document.getElementById('stats-area');
+        const startBtn = document.getElementById('start-btn');
+
+        // --- 音频系统 ---
+        let audioCtx = null;
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playSound(type) {
+            if (!audioCtx) initAudio();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            const now = audioCtx.currentTime;
+
+            if (type === 'correct') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.exponentialRampToValueAtTime(1200, now + 0.1);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.linearRampToValueAtTime(0, now + 0.15);
+                osc.start(now);
+                osc.stop(now + 0.15);
+            } else {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(150, now);
+                osc.frequency.linearRampToValueAtTime(100, now + 0.2);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.linearRampToValueAtTime(0, now + 0.2);
+                osc.start(now);
+                osc.stop(now + 0.2);
+            }
+        }
+
+        // --- 逻辑控制 ---
+        function setMode(mode, btnElement) {
+            currentMode = mode;
+            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+            btnElement.classList.add('active');
+            
+            isPlaying = false;
+            startBtn.disabled = false;
+            startBtn.innerText = "开始练习";
+            targetLineEl.innerText = mode === 'letter' ? "准备好练习字母了吗？" : "准备好练习单词了吗？";
+            inputLineEl.innerHTML = '<span class="cursor"></span>';
+            statsArea.style.display = 'none';
+            initAudio();
+        }
+
+        function generateTarget() {
+            if (currentMode === 'letter') {
+                let res = "";
+                for (let i = 0; i < LETTER_COUNT; i++) res += ALPHABET.charAt(Math.floor(Math.random() * ALPHABET.length));
+                return res;
+            } else {
+                let words = [];
+                for(let i=0; i< WORD_COUNT; i++) words.push(WORD_LIST[Math.floor(Math.random() * WORD_LIST.length)]);
+                return words.join(" "); 
+            }
+        }
+
+        function startGame() {
+            initAudio();
+            currentIndex = 0; correctCount = 0; wrongCount = 0;
+            isPlaying = true;
+            hiddenInput.value = "";
+            
+            targetText = generateTarget();
+            
+            targetLineEl.innerHTML = targetText.split('').map(char => {
+                const displayChar = char === ' ' ? '&nbsp;' : char;
+                return `<span>${displayChar}</span>`;
+            }).join('');
+            
+            inputLineEl.innerHTML = '<span class="cursor"></span>';
+            statsArea.style.display = 'none';
+            startBtn.innerText = "练习中...";
+            startBtn.disabled = true;
+            focusInput();
+        }
+
+        function focusInput() { if (isPlaying) hiddenInput.focus(); }
+
+        function endGame() {
+            isPlaying = false;
+            startBtn.innerText = "再来一局";
+            startBtn.disabled = false;
+            hiddenInput.blur();
+            document.getElementById('score-correct').innerText = correctCount;
+            document.getElementById('score-wrong').innerText = wrongCount;
+            statsArea.style.display = 'block';
+        }
+
+        // --- 输入处理 ---
+        hiddenInput.addEventListener('input', (e) => {
+            if (!isPlaying) return;
+            const inputValue = e.target.value;
+            const inputChar = inputValue.slice(-1).toLowerCase(); 
+            
+            if (!/[a-z ]/.test(inputChar)) return;
+
+            const targetChar = targetText[currentIndex];
+            const span = document.createElement('span');
+            
+            if (inputChar === ' ') {
+                span.innerHTML = '&nbsp;';
+            } else {
+                span.innerText = inputChar;
+            }
+
+            if (inputChar === targetChar) {
+                span.className = 'char-correct';
+                correctCount++;
+                playSound('correct');
+            } else {
+                span.className = 'char-wrong';
+                wrongCount++;
+                playSound('wrong');
+            }
+
+            const cursor = inputLineEl.querySelector('.cursor');
+            inputLineEl.insertBefore(span, cursor);
+
+            const container = inputLineEl.parentElement;
+            container.scrollLeft = container.scrollWidth; 
+
+            currentIndex++;
+            if (currentIndex >= targetText.length) {
+                endGame();
+            }
+        });
+
+        document.querySelector('.main-content').addEventListener('click', (e) => {
+            if (isPlaying && e.target !== startBtn) focusInput();
+        });
+        
+        targetLineEl.innerText = "👈 请在左侧选择模式";
+
+    </script>
+</body>
+</html>
